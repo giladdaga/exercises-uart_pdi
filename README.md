@@ -19,7 +19,6 @@ The new data will begin at the requested bit-index. The rest of the data will re
 When reset = 1, dout will be set to 0.
 
 Input  (RX):     |   'W'   |  idx[3] |  idx[2] |  idx[1] |  idx[0] |  len[3] |  len[2] |  len[1] |  len[0] | 
-
                  | data[0] | data[1] |  .....  | data[N] |   'F'   |
 
 
