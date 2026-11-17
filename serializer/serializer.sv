@@ -2,10 +2,11 @@
 
 // =============================================================================
 // Module: serializer
-// Description: Reads bytes from an internal FIFO and transmits them over a
-//              standard UART TX line using 8N1 framing (1 start bit, 8 data
-//              bits LSB-first, no parity, 1 stop bit) at the configured baud
-//              rate.  The TX line is idle-high.
+// Description: Reads bytes over a Ready/Valid interface, store them in an
+//              internal FIFO and transmits them over a standard UART TX line 
+//              using 8N1 framing (1 start bit, 8 data bits LSB-first, no 
+//              parity, 1 stop bit) at the configured baud rate. The TX line is 
+//              idle-high.
 // =============================================================================
 module serializer #(
     parameter int DATA_WIDTH = 8,    // Must be 8 for standard UART
@@ -65,7 +66,7 @@ module serializer #(
     logic [BIT_COUNTER_WIDTH-1:0]  bit_counter;  // Current data bit index (0-7)
     logic [DATA_WIDTH-1:0]         shift_reg;    // Byte being transmitted
 
-    // Pulse high on the last clock cycle of each baud period
+    // baud_tick is high at the last clock cycle of each baud period
     logic baud_tick;
     assign baud_tick = (baud_counter == (BAUD_DIV - 1));
 
@@ -95,10 +96,10 @@ module serializer #(
     // =========================================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state     <= IDLE;
-            baud_counter  <= '0;
-            bit_counter   <= '0;
-            shift_reg <= '0;
+            state        <= IDLE;
+            baud_counter <= '0;
+            bit_counter  <= '0;
+            shift_reg    <= '0;
         end else begin
             case (state)
 
@@ -118,9 +119,10 @@ module serializer #(
                         shift_reg <= fifo_data_out;
 
                     if (baud_tick) begin
+                        // Finished transmission of start bit
                         baud_counter <= '0;
                         bit_counter  <= '0;
-                        state    <= DATA;
+                        state        <= DATA;
                     end else begin
                         baud_counter <= baud_counter + 1'b1;
                     end
@@ -129,7 +131,7 @@ module serializer #(
                 DATA: begin
                     if (baud_tick) begin
                         baud_counter  <= '0;
-                        if (bit_counter == BIT_COUNTER_WIDTH'(DATA_WIDTH - 1)) begin
+                        if (bit_counter == (DATA_WIDTH - 1)) begin
                             bit_counter <= '0;
                             state       <= STOP;
                         end else begin
