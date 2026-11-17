@@ -43,6 +43,8 @@ module deserializer #(
     logic                  fifo_write_en;
     logic                  fifo_read_en;
     logic [DATA_WIDTH-1:0] fifo_data_out;
+    logic [DATA_WIDTH-1:0] shift_reg;    // Byte being assembled
+
 
     fifo #(
         .FIFO_DEPTH (FIFO_DEPTH),
@@ -97,7 +99,6 @@ module deserializer #(
     state_t                        state;
     logic [BAUD_COUNTER_WIDTH-1:0] baud_counter; // Counts down within a baud period
     logic [BIT_COUNTER_WIDTH-1:0]  bit_counter;  // Current data bit index (0-7)
-    logic [DATA_WIDTH-1:0]         shift_reg;    // Byte being assembled
     logic                          error_reg;    // Error flag
 
     // baud_tick is high at the last clock cycle of each baud period
@@ -111,8 +112,11 @@ module deserializer #(
     // =========================================================================
     // 1. Combinational FIFO Write & Output Handshake (Skid/Prefetch Buffer)
     // =========================================================================
+    // Detect error in STOP state: stop bit is not high or FIFO is full.
+    logic error_cond;
+    assign error_cond = !current_rx || fifo_full;
     // Write assembled byte into FIFO at the center of a valid (high) stop bit
-    assign fifo_write_en = (state == STOP) && baud_tick;
+    assign fifo_write_en = (state == STOP) && baud_tick && !error_cond;
 
     // data_out interface logic:
     // data_out uses skid logic, to allows the module to send a new output 
@@ -124,9 +128,10 @@ module deserializer #(
     logic                  fifo_data_valid;
     logic                  skid_data_valid;
     logic [DATA_WIDTH-1:0] skid_data;
-    assign valid_out    = fifo_data_valid || skid_data_valid;
+    assign valid_out    = (fifo_data_valid || skid_data_valid);
     assign data_out     = skid_data_valid ? skid_data : fifo_data_out;
     assign fifo_read_en = !fifo_empty && (!valid_out || ready_out);
+    assign error_out    = error_reg;
 
     // =========================================================================
     // 2. Sequential Logic — RX baud counter, FSM, datapath, and output buffer
@@ -189,7 +194,7 @@ module deserializer #(
                     if (baud_tick) begin
                         baud_counter <= '0;
                         state        <= IDLE;
-                        if (!current_rx || fifo_full)
+                        if (error_cond)
                             error_reg <= '1;
                     end else begin
                         baud_counter <= baud_counter + 1'b1;
