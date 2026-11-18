@@ -54,7 +54,8 @@ module uart_pdi_tb;
     .DATA_WIDTH      (DATA_WIDTH),
     .BYTE_LENGTH     (BYTE_LENGTH),
     .BITS_FOR_INDEX  (BITS_FOR_INDEX),
-    .BITS_FOR_LENGTH (BITS_FOR_LENGTH)
+    .BITS_FOR_LENGTH (BITS_FOR_LENGTH),
+    .BAUD_DIV        (BAUD_DIV)
   ) dut (
     .clk   (clk),
     .rst_n (rst_n),
@@ -421,15 +422,12 @@ module uart_pdi_tb;
     din = 32'hCAFEBABE;
     fork
       begin : mid_read_sender
-        // Start sending the read command bytes
-        send_uart_byte(CMD_R);
-        send_32b_be(32'd0);    // idx = 0 (4 bytes)
-        // Abort mid-way — stop after sending idx, before len
+        // Send a full read command (9 UART bytes total)
+        send_read_cmd(32'd0, 32'd32);
       end
       begin : mid_read_resetter
-        // Let the sender transmit a few bytes then reset
-        // 1 CMD byte + 4 idx bytes = 5 bytes * ~11 baud periods each
-        repeat (5 * BAUD_DIV * 11) @(posedge clk);
+        // Wait partway through command reception (approx 3 frames in), then abort and reset
+        repeat (3 * BAUD_DIV * 10) @(posedge clk);
         ->abort_rx_frame;
         #1;
         exp_q.delete();
@@ -439,7 +437,7 @@ module uart_pdi_tb;
     disable fork;
     rx = 1'b1;
 
-    repeat (2) @(posedge clk); #1;
+    repeat (BAUD_DIV * 2) @(posedge clk); #1;
     if (tx   !== 1'b1) begin $error("[%0t] TX not idle-high after mid-read reset", $time); errors++; end
     if (dout !== '0  ) begin $error("[%0t] dout not zero after mid-read reset",    $time); errors++; end
     // Verify normal operation resumes after reset

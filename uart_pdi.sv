@@ -59,6 +59,8 @@ module uart_pdi  // UART Parallel Data Interface
     logic serializer_ready;
     logic serializer_error;
 
+    logic uart_pdi_control_error;
+
     // =========================================================================
     // Modules instantiation
     // =========================================================================
@@ -85,7 +87,6 @@ module uart_pdi  // UART Parallel Data Interface
         .data_in(tx_byte),
         .valid_in(tx_byte_valid),
         .ready_in(serializer_ready),
-        .error_out(serializer_error),
         .tx(tx)
     );
 
@@ -101,10 +102,11 @@ module uart_pdi  // UART Parallel Data Interface
         .rx_byte_valid(rx_byte_valid),
         .ready_to_receive(uart_ready),
         .tx_byte(tx_byte),
-        .tx_byte_vaild(tx_byte_vaild),
+        .tx_byte_valid(tx_byte_valid),
         .ready_out(serializer_ready),
         .din(din),
-        .dout(dout)
+        .dout(dout),
+        .error_out(uart_pdi_control_error)
     );
 
 
