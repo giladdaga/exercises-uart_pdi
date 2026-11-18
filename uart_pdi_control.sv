@@ -23,5 +23,4 @@ module uart_pdi_control  // uart_pdi control module
 
 
 
-
 endmodule
