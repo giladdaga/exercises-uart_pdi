@@ -31,8 +31,8 @@
 module uart_pdi  // UART Parallel Data Interface
   #(parameter DATA_WIDTH = 1024,           // Parameterized bus width; max 2^16 = 65536 bits
     parameter BYTE_LENGTH = 8,             // Number of bits per byte
-    parameter BITS_FOR_LENGTH = 4,         // Number of bits for length field
-    parameter BITS_FOR_INDEX = 4,          // Number of bits for index field
+    parameter BYTES_FOR_LENGTH = 4,         // Number of bits for length field
+    parameter BYTES_FOR_INDEX = 4,          // Number of bits for index field
     parameter BAUD_DIV = 868               // Clock cycles per baud period
                                            // e.g. 100 MHz / 115200 baud ≈ 868
 ) (
@@ -93,8 +93,8 @@ module uart_pdi  // UART Parallel Data Interface
     uart_pdi_control #(
         .DATA_WIDTH(DATA_WIDTH),
         .BYTE_LENGTH(BYTE_LENGTH),
-        .BITS_FOR_LENGTH(BITS_FOR_LENGTH),
-        .BITS_FOR_INDEX(BITS_FOR_INDEX)
+        .BYTES_FOR_LENGTH(BYTES_FOR_LENGTH),
+        .BYTES_FOR_INDEX(BYTES_FOR_INDEX)
     ) u_uart_pdi_control (
         .clk(clk),
         .rst_n(rst_n),
