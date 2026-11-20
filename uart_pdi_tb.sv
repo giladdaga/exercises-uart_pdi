@@ -26,12 +26,12 @@ module uart_pdi_tb;
   // --------------------------------------------------------------------------
   // Parameters — DATA_WIDTH kept small for fast simulation
   // --------------------------------------------------------------------------
-  localparam int DATA_WIDTH      = 32;   // DUT default is 1024; 32 is enough to test
-  localparam int BYTE_LENGTH     = 8;
-  localparam int BITS_FOR_INDEX  = 4;    // 4-byte (32-bit) index field
-  localparam int BITS_FOR_LENGTH = 4;    // 4-byte (32-bit) length field
-  localparam int CLK_PERIOD      = 10;   // ns  (100 MHz)
-  localparam int BAUD_DIV        = 16;   // Small value for fast simulation
+  localparam int DATA_WIDTH       = 32;   // DUT default is 1024; 32 is enough to test
+  localparam int BYTE_LENGTH      = 8;
+  localparam int BYTES_FOR_LENGTH = 4;    // 4-byte index field
+  localparam int BYTES_FOR_INDEX  = 4;    // 4-byte length field
+  localparam int CLK_PERIOD       = 10;   // ns  (100 MHz)
+  localparam int BAUD_DIV         = 16;   // Small value for fast simulation
 
   localparam logic [7:0] CMD_R = 8'h52;  // 'R'
   localparam logic [7:0] CMD_W = 8'h57;  // 'W'
@@ -53,8 +53,8 @@ module uart_pdi_tb;
   uart_pdi #(
     .DATA_WIDTH      (DATA_WIDTH),
     .BYTE_LENGTH     (BYTE_LENGTH),
-    .BITS_FOR_INDEX  (BITS_FOR_INDEX),
-    .BITS_FOR_LENGTH (BITS_FOR_LENGTH),
+    .BYTES_FOR_INDEX  (BYTES_FOR_INDEX),
+    .BYTES_FOR_LENGTH (BYTES_FOR_LENGTH),
     .BAUD_DIV        (BAUD_DIV)
   ) dut (
     .clk   (clk),
