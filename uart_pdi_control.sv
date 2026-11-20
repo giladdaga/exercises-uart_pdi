@@ -19,8 +19,8 @@
 module uart_pdi_control #(
     parameter int DATA_WIDTH      = 1024, // Wide parallel bus width; max 2^16 = 65536 bits
     parameter int BYTE_LENGTH     = 8,    // Number of bits per byte
-    parameter int BITS_FOR_LENGTH = 4,    // Number of bytes for length field (4 bytes = 32 bits)
-    parameter int BITS_FOR_INDEX  = 4     // Number of bytes for index field (4 bytes = 32 bits)
+    parameter int BITS_FOR_LENGTH = 4,    // Number of bits for length field
+    parameter int BITS_FOR_INDEX  = 4     // Number of bits for index field
 ) (
     input  logic                  clk,
     input  logic                  rst_n,
