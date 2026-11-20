@@ -19,8 +19,8 @@
 module uart_pdi_control #(
     parameter int DATA_WIDTH      = 1024, // Wide parallel bus width; max 2^16 = 65536 bits
     parameter int BYTE_LENGTH     = 8,    // Number of bits per byte
-    parameter int BITS_FOR_LENGTH = 4,    // Number of bits for length field
-    parameter int BITS_FOR_INDEX  = 4     // Number of bits for index field
+    parameter int BYTES_FOR_LENGTH = 4,    // Number of bytes for length field
+    parameter int BYTES_FOR_INDEX  = 4     // Number of bytes for index field
 ) (
     input  logic                  clk,
     input  logic                  rst_n,
@@ -46,15 +46,14 @@ module uart_pdi_control #(
     // =========================================================================
     // Protocol Constants & Sizing Parameters
     // =========================================================================
-    localparam logic [BYTE_LENGTH-1:0] CMD_R = 8'h52; // 'R' = Read command
-    localparam logic [BYTE_LENGTH-1:0] CMD_W = 8'h57; // 'W' = Write command
-    localparam logic [BYTE_LENGTH-1:0] CMD_F = 8'h46; // 'F' = End of transaction
+    localparam logic [BYTE_LENGTH-1:0] CMD_R = 8'h52; // 'R' in ASCII
+    localparam logic [BYTE_LENGTH-1:0] CMD_W = 8'h57; // 'W' in ASCII
+    localparam logic [BYTE_LENGTH-1:0] CMD_F = 8'h46; // 'F' in ASCII
 
-    localparam int TOTAL_INDEX_BITS   = BITS_FOR_INDEX * BYTE_LENGTH;
-    localparam int TOTAL_LENGTH_BITS  = BITS_FOR_LENGTH * BYTE_LENGTH;
-    localparam int MAX_FIELD_BYTES    = (BITS_FOR_INDEX > BITS_FOR_LENGTH) ? BITS_FOR_INDEX : BITS_FOR_LENGTH;
-    localparam int BYTE_COUNTER_WIDTH = $clog2(MAX_FIELD_BYTES + 1);
-    localparam int BIT_COUNTER_WIDTH  = (TOTAL_LENGTH_BITS > 32 ? TOTAL_LENGTH_BITS : 32) + 1;
+    localparam int BITS_FOR_INDEX   = BYTES_FOR_INDEX * BYTE_LENGTH;
+    localparam int BITS_FOR_LENGTH  = BYTES_FOR_LENGTH * BYTE_LENGTH;
+    localparam int BYTE_COUNTER_WIDTH = (BYTES_FOR_INDEX > BYTES_FOR_LENGTH) ? $clog2(BYTES_FOR_INDEX + 1) : $clog2(BYTES_FOR_LENGTH + 1)
+    localparam int BIT_COUNTER_WIDTH  = (BITS_FOR_LENGTH > 32 ? BITS_FOR_LENGTH : 32) + 1;
 
     // =========================================================================
     // FSM States
@@ -64,9 +63,9 @@ module uart_pdi_control #(
         ST_GET_INDEX    = 3'b001, // Receiving index bytes (big-endian)
         ST_GET_LENGTH   = 3'b010, // Receiving length bytes (big-endian)
         ST_READ_DATA    = 3'b011, // Serializing din bits and transmitting to serializer
-        ST_READ_FINISH  = 3'b100, // Transmitting 'F' delimiter to serializer
+        ST_READ_FINISH  = 3'b100, // Transmitting 'F' to serializer
         ST_WRITE_DATA   = 3'b101, // Receiving write data bytes and updating dout
-        ST_WRITE_FINISH = 3'b110  // Awaiting 'F' delimiter from deserializer
+        ST_WRITE_FINISH = 3'b110  // Receiving 'F' from deserializer
     } state_t;
 
     typedef enum logic {
@@ -76,10 +75,10 @@ module uart_pdi_control #(
 
     state_t                          state;
     op_t                             op;
-    logic [TOTAL_INDEX_BITS-1:0]     index_reg;
-    logic [TOTAL_LENGTH_BITS-1:0]    length_reg;
-    logic [BYTE_COUNTER_WIDTH-1:0]   byte_counter;
-    logic [BIT_COUNTER_WIDTH-1:0]    bit_counter;
+    logic [BITS_FOR_INDEX-1:0]       index_reg;
+    logic [BITS_FOR_LENGTH-1:0]      length_reg;
+    logic [BYTE_COUNTER_WIDTH-1:0]   byte_counter; // Will be used when receiving index & length
+    logic [BIT_COUNTER_WIDTH-1:0]    bit_counter; // Will be used when engaging din & dout
     logic [DATA_WIDTH-1:0]           din_latch;
     logic                            error_reg;
 
@@ -90,7 +89,7 @@ module uart_pdi_control #(
     assign tx_handshake = tx_byte_valid && ready_out;
 
     // Helper: evaluates full length on the last incoming length byte
-    logic [TOTAL_LENGTH_BITS-1:0] incoming_length;
+    logic [BITS_FOR_LENGTH-1:0] incoming_length;
     always_comb begin
         incoming_length = length_reg;
         incoming_length[0 +: BYTE_LENGTH] = rx_byte;
@@ -108,24 +107,28 @@ module uart_pdi_control #(
                               (state == ST_WRITE_DATA)   ||
                               (state == ST_WRITE_FINISH);
 
-    // TX byte valid when streaming data or end-of-frame marker to serializer
+    // TX byte valid in output states
     assign tx_byte_valid = (state == ST_READ_DATA) || (state == ST_READ_FINISH);
 
     // Construct TX byte: LSB-first with zero-padding on last byte
     always_comb begin
-        tx_byte = '0;
+        tx_byte = '0; // Default TX
+
+        // TX in ST_READ_DATA state is din[index+counter]:
         if (state == ST_READ_DATA) begin
             for (int i = 0; i < BYTE_LENGTH; i++) begin
                 if ((bit_counter + i) < length_reg) begin
                     if ((index_reg + bit_counter + i) < DATA_WIDTH) begin
                         tx_byte[i] = din_latch[index_reg + bit_counter + i];
                     end else begin
-                        tx_byte[i] = 1'b0;
+                        tx_byte[i] = 1'b0; // Zero-pad if byte is end of din is reached
                     end
                 end else begin
-                    tx_byte[i] = 1'b0; // Zero-pad incomplete final byte
+                    tx_byte[i] = 1'b0; // Zero-pad if final byte is incompleted
                 end
             end
+
+        // TX in ST_READ_FINISH state is 'F':
         end else if (state == ST_READ_FINISH) begin
             tx_byte = CMD_F;
         end
@@ -155,14 +158,13 @@ module uart_pdi_control #(
                     byte_counter <= '0;
                     bit_counter  <= '0;
                     if (rx_handshake) begin
-                        if (rx_byte == CMD_R) begin
+                        state <= ST_GET_INDEX;
+                        if (rx_byte == CMD_R)
                             op    <= OP_READ;
-                            state <= ST_GET_INDEX;
-                        end else if (rx_byte == CMD_W) begin
+                        else if (rx_byte == CMD_W)
                             op    <= OP_WRITE;
-                            state <= ST_GET_INDEX;
-                        end
-                        // Invalid opcode: self-loop in ST_START
+                        else
+                            error_reg <= 1'b1; // Invalid opcode: self-loop in ST_START & raise error flag
                     end
                 end
 
@@ -171,8 +173,9 @@ module uart_pdi_control #(
                 // -------------------------------------------------------------
                 ST_GET_INDEX: begin
                     if (rx_handshake) begin
-                        index_reg[(BITS_FOR_INDEX - 1 - byte_counter)*BYTE_LENGTH +: BYTE_LENGTH] <= rx_byte;
-                        if (byte_counter == (BITS_FOR_INDEX - 1)) begin
+                        index_reg[(BYTES_FOR_INDEX - 1 - byte_counter)*BYTE_LENGTH +: BYTE_LENGTH] <= rx_byte;
+                        if (byte_counter == (BYTES_FOR_INDEX - 1)) begin
+                            // Index transactions finished
                             byte_counter <= '0;
                             state        <= ST_GET_LENGTH;
                         end else begin
@@ -186,12 +189,13 @@ module uart_pdi_control #(
                 // -------------------------------------------------------------
                 ST_GET_LENGTH: begin
                     if (rx_handshake) begin
-                        length_reg[(BITS_FOR_LENGTH - 1 - byte_counter)*BYTE_LENGTH +: BYTE_LENGTH] <= rx_byte;
-                        if (byte_counter == (BITS_FOR_LENGTH - 1)) begin
+                        length_reg[(BYTES_FOR_LENGTH - 1 - byte_counter)*BYTE_LENGTH +: BYTE_LENGTH] <= rx_byte;
+                        if (byte_counter == (BYTES_FOR_LENGTH - 1)) begin
+                            // Length transaction finished
                             byte_counter <= '0;
                             bit_counter  <= '0;
                             din_latch    <= din; // Atomically capture parallel input
-                            if (incoming_length == '0) begin
+                            if (incoming_length == '0) begin // If length == 0
                                 state <= (op == OP_READ) ? ST_READ_FINISH : ST_WRITE_FINISH;
                             end else begin
                                 state <= (op == OP_READ) ? ST_READ_DATA : ST_WRITE_DATA;
@@ -208,6 +212,7 @@ module uart_pdi_control #(
                 ST_READ_DATA: begin
                     if (tx_handshake) begin
                         if ((bit_counter + BYTE_LENGTH) >= length_reg) begin
+                            // Current byte is last one
                             bit_counter <= '0;
                             state       <= ST_READ_FINISH;
                         end else begin
@@ -232,12 +237,15 @@ module uart_pdi_control #(
                     if (rx_handshake) begin
                         for (int i = 0; i < BYTE_LENGTH; i++) begin
                             if ((bit_counter + i) < length_reg) begin
+                                // Make sure to stay within length
                                 if ((index_reg + bit_counter + i) < DATA_WIDTH) begin
+                                    // Make sure to stay within dout width
                                     dout[index_reg + bit_counter + i] <= rx_byte[i];
                                 end
                             end
                         end
                         if ((bit_counter + BYTE_LENGTH) >= length_reg) begin
+                            // Current byte is last one
                             bit_counter <= '0;
                             state       <= ST_WRITE_FINISH;
                         end else begin
