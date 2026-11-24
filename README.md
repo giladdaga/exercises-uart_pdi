@@ -1,30 +1,62 @@
-# uart_pdi_exercise
-UART_PDI exercise: module design and testbench
+# UART Parallel Data Interface (UART PDI)
 
+Hardware interface for bit-level read and write access to wide parallel registers (`din` / `dout`) over standard 8N1 UART.
 
-Assumptions:
+## Architecture
 
-- Read op protocol:
-The module will serialise the requested number of bits, beginning from the requested bit-index, from the input din.
-LSB first within each byte, zero-padded if length is not a multiple of 8.
-The bytes will be transmitted over TX. The keyword 'F' will mark the end of the transaction.
+- **`uart_pdi`**: Top-level integration module.
+  - **`uart_pdi_control`**: FSM handling protocol parsing, wide register sampling (`din`), register updating (`dout`), and data serialization.
+  - **`deserializer`**: UART RX to parallel byte receiver with internal FIFO and Ready/Valid interface.
+  - **`serializer`**: Parallel byte to UART TX transmitter with internal FIFO and Ready/Valid interface.
+  - **`FIFO`**: Synchronous FIFO buffer used by serializer and deserializer.
 
-Input  (RX):     |   'R'   |  idx[3] |  idx[2] |  idx[1] |  idx[0] |  len[3] |  len[2] |  len[1] |  len[0] |
+---
 
-Output (TX):     | data[0] | data[1] |  .....  | data[N] |   'F'   |
+## Protocol Specification
 
-- Write op protocol:
-After receiving 'W', the module will transmit the received data over dout.
-The new data will begin at the requested bit-index. The rest of the data will retain the previous value.
-When reset = 1, dout will be set to 0.
+- **Format**: 8N1 UART (1 start bit, 8 data bits LSB-first, no parity, 1 stop bit).
+- **Opcodes**: `'R'` (`0x52`), `'W'` (`0x57`), `'F'` (`0x46` delimiter).
+- **Addressing**: `idx` (bit index) and `len` (bit count) are 4-byte **big-endian** integers.
 
-Input  (RX):     |   'W'   |  idx[3] |  idx[2] |  idx[1] |  idx[0] |  len[3] |  len[2] |  len[1] |  len[0] | 
-                 | data[0] | data[1] |  .....  | data[N] |   'F'   |
+### READ Operation
+Reads `len` bits from `din` starting at `idx`, transmitted LSB-first within each byte (zero-padded on the last byte if `len` is not a multiple of 8), followed by `'F'`.
 
+```
+RX (Input):  | 'R' | idx[3] | idx[2] | idx[1] | idx[0] | len[3] | len[2] | len[1] | len[0] |
+TX (Output): | data[0] | data[1] | ... | data[N] | 'F' |
+```
 
+### WRITE Operation
+Writes `len` bits into `dout` starting at `idx`. Unwritten bits retain their previous values (`dout = 0` on reset). The transaction must end with `'F'`.
 
-- 'R' = 0x52, 'W' = 0x57, 'F' = 0x46.
-- The module is a synthesizeable, parameterised verilog code.
-- The protocol uses big-endian encoding for the 4-byte length & index fields.
-- If bit_index + length > DATA_WIDTH, the behavior is unspecified.
-- Assume 8N1 format: 8 data bits, no parity, 1 stop bit. Baud rate is an implementation parameter.
+```
+RX (Input):  | 'W' | idx[3] | idx[2] | idx[1] | idx[0] | len[3] | len[2] | len[1] | len[0] | data[0] | ... | data[N] | 'F' |
+```
+
+---
+
+## Simulation (`xrun`)
+
+Execute from the repository root:
+
+### Main Testbench (`uart_pdi_tb`)
+```bash
+xrun -sv FIFO/FIFO.v serializer/serializer.sv deserializer/deserializer.sv uart_pdi_control.sv uart_pdi.sv uart_pdi_tb.sv
+```
+
+### Submodule Testbenches
+
+- **Serializer**:
+  ```bash
+  xrun -sv FIFO/FIFO.v serializer/serializer.sv serializer/serializer_tb.sv
+  ```
+
+- **Deserializer**:
+  ```bash
+  xrun -sv FIFO/FIFO.v deserializer/deserializer.sv deserializer/deserializer_tb.sv
+  ```
+
+- **FIFO**:
+  ```bash
+  xrun -sv FIFO/FIFO.v FIFO/fifo_tb.v
+  ```
