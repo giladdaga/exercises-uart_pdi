@@ -26,12 +26,12 @@ module uart_pdi_tb;
   // --------------------------------------------------------------------------
   // Parameters — DATA_WIDTH kept small for fast simulation
   // --------------------------------------------------------------------------
-  localparam int DATA_WIDTH      = 32;   // DUT default is 1024; 32 is enough to test
-  localparam int BYTE_LENGTH     = 8;
-  localparam int BITS_FOR_INDEX  = 4;    // 4-byte (32-bit) index field
-  localparam int BITS_FOR_LENGTH = 4;    // 4-byte (32-bit) length field
-  localparam int CLK_PERIOD      = 10;   // ns  (100 MHz)
-  localparam int BAUD_DIV        = 16;   // Small value for fast simulation
+  localparam int DATA_WIDTH       = 32;   // DUT default is 1024; 32 is enough to test
+  localparam int BYTE_LENGTH      = 8;
+  localparam int BYTES_FOR_LENGTH = 4;    // 4-byte index field
+  localparam int BYTES_FOR_INDEX  = 4;    // 4-byte length field
+  localparam int CLK_PERIOD       = 10;   // ns  (100 MHz)
+  localparam int BAUD_DIV         = 16;   // Small value for fast simulation
 
   localparam logic [7:0] CMD_R = 8'h52;  // 'R'
   localparam logic [7:0] CMD_W = 8'h57;  // 'W'
@@ -53,8 +53,9 @@ module uart_pdi_tb;
   uart_pdi #(
     .DATA_WIDTH      (DATA_WIDTH),
     .BYTE_LENGTH     (BYTE_LENGTH),
-    .BITS_FOR_INDEX  (BITS_FOR_INDEX),
-    .BITS_FOR_LENGTH (BITS_FOR_LENGTH)
+    .BYTES_FOR_INDEX  (BYTES_FOR_INDEX),
+    .BYTES_FOR_LENGTH (BYTES_FOR_LENGTH),
+    .BAUD_DIV        (BAUD_DIV)
   ) dut (
     .clk   (clk),
     .rst_n (rst_n),
@@ -421,15 +422,12 @@ module uart_pdi_tb;
     din = 32'hCAFEBABE;
     fork
       begin : mid_read_sender
-        // Start sending the read command bytes
-        send_uart_byte(CMD_R);
-        send_32b_be(32'd0);    // idx = 0 (4 bytes)
-        // Abort mid-way — stop after sending idx, before len
+        // Send a full read command (9 UART bytes total)
+        send_read_cmd(32'd0, 32'd32);
       end
       begin : mid_read_resetter
-        // Let the sender transmit a few bytes then reset
-        // 1 CMD byte + 4 idx bytes = 5 bytes * ~11 baud periods each
-        repeat (5 * BAUD_DIV * 11) @(posedge clk);
+        // Wait partway through command reception (approx 3 frames in), then abort and reset
+        repeat (3 * BAUD_DIV * 10) @(posedge clk);
         ->abort_rx_frame;
         #1;
         exp_q.delete();
@@ -439,7 +437,7 @@ module uart_pdi_tb;
     disable fork;
     rx = 1'b1;
 
-    repeat (2) @(posedge clk); #1;
+    repeat (BAUD_DIV * 2) @(posedge clk); #1;
     if (tx   !== 1'b1) begin $error("[%0t] TX not idle-high after mid-read reset", $time); errors++; end
     if (dout !== '0  ) begin $error("[%0t] dout not zero after mid-read reset",    $time); errors++; end
     // Verify normal operation resumes after reset
