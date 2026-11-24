@@ -52,8 +52,8 @@ module uart_pdi_control #(
 
     localparam int BITS_FOR_INDEX   = BYTES_FOR_INDEX * BYTE_LENGTH;
     localparam int BITS_FOR_LENGTH  = BYTES_FOR_LENGTH * BYTE_LENGTH;
-    localparam int BYTE_COUNTER_WIDTH = (BYTES_FOR_INDEX > BYTES_FOR_LENGTH) ? $clog2(BYTES_FOR_INDEX + 1) : $clog2(BYTES_FOR_LENGTH + 1)
-    localparam int BIT_COUNTER_WIDTH  = (BITS_FOR_LENGTH > 32 ? BITS_FOR_LENGTH : 32) + 1;
+    localparam int BYTE_COUNTER_WIDTH = (BYTES_FOR_INDEX > BYTES_FOR_LENGTH) ? $clog2(BYTES_FOR_INDEX + 1) : $clog2(BYTES_FOR_LENGTH + 1);
+    localparam int BIT_COUNTER_WIDTH  = ((BITS_FOR_LENGTH > 32) ? BITS_FOR_LENGTH : 32) + 1;
 
     // =========================================================================
     // FSM States
